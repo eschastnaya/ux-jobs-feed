@@ -46,7 +46,7 @@ async function fetchRemoteOK() {
       id: `rok-${j.id}`,
       title: j.position,
       company: j.company,
-      url: j.url || `https://remoteok.com/remote-jobs/${j.id}`,
+      url: j.apply_url || j.url || `https://remoteok.com/remote-jobs/${j.id}`,
       date: j.date || new Date().toISOString(),
       location: j.location || "Remote Worldwide",
       salary: j.salary_min && j.salary_max ? `$${Math.round(j.salary_min/1000)}k–$${Math.round(j.salary_max/1000)}k` : "",
