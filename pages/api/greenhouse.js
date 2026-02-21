@@ -1,27 +1,15 @@
 const COMPANIES = [
-  // Design tools
   "figma", "linear", "vercel", "notion", "loom", "miro", "framer",
-  "webflow", "coda", "pitch", "descript", "canva", "overflow",
-  // Fintech
-  "stripe", "brex", "plaid", "gusto", "mercury", "rippling",
-  "wise", "ramp", "moderntreasury", "unit", "lithic",
-  // Dev tools & infra  
+  "webflow", "coda", "pitch", "descript", "canva",
+  "stripe", "brex", "plaid", "gusto", "mercury", "rippling", "ramp",
   "github", "gitlab", "retool", "segment", "amplitude", "mixpanel",
-  "datadog", "cloudflare", "hashicorp", "snyk", "postman",
-  // SaaS / B2B
+  "datadog", "cloudflare", "snyk", "postman",
   "intercom", "atlassian", "airtable", "asana", "monday",
   "hubspot", "typeform", "lattice", "contentful", "zapier",
-  "superhuman", "front", "missive", "craft", "linear",
-  // Consumer / growth
-  "dropbox", "duolingo", "calm", "headspace", "strava",
-  "peloton", "bumble", "hinge", "houseparty",
-  // AI / new wave
-  "anthropic", "cohere", "jasper", "runway", "synthesia",
-  "moveworks", "glean", "adept", "inflection",
-  // E-commerce / marketplace
-  "shopify", "klaviyo", "yotpo", "gorgias", "rebuy",
-  // Other strong design cultures
-  "benchling", "carta", "deel", "remote", "dbt",
+  "superhuman", "dropbox", "duolingo", "calm",
+  "anthropic", "cohere", "jasper", "runway", "synthesia", "glean",
+  "shopify", "klaviyo", "carta", "deel", "remote", "dbt",
+  "benchling", "lottiefiles", "maze", "dovetail",
 ];
 
 const DESIGN_KW = [
@@ -33,8 +21,34 @@ const DESIGN_KW = [
   "staff designer", "principal designer",
 ];
 
+const REMOTE_KW = ["remote", "anywhere", "worldwide", "distributed", "global", "work from home", "wfh"];
+const LOCATION_BLOCK = ["on-site", "onsite", "on site", "in-office", "in office", "hybrid"];
+
 function isDesign(title = "") {
   return DESIGN_KW.some(k => title.toLowerCase().includes(k));
+}
+
+function isRemote(locationName = "", jobContent = "") {
+  const loc = locationName.toLowerCase();
+  const content = (jobContent || "").toLowerCase().slice(0, 500);
+  
+  // Block clearly non-remote
+  if (LOCATION_BLOCK.some(k => loc.includes(k))) return false;
+  
+  // Accept if location says remote
+  if (REMOTE_KW.some(k => loc.includes(k))) return true;
+  
+  // Accept if no specific city (just country or region)
+  const hasCityPattern = /,\s*(ca|ny|tx|wa|or|ma|il|co|ga|fl|uk|de|fr|nl|es|pl|it)$/i.test(locationName);
+  
+  // Accept USA/Europe without specific office city
+  const broadLocations = ["united states", "usa", "us", "europe", "emea", "north america", ""];
+  if (broadLocations.some(b => loc === b || loc.includes(b))) return true;
+  
+  // Check job content for remote mentions
+  if (REMOTE_KW.some(k => content.includes(k))) return true;
+
+  return false;
 }
 
 export default async function handler(req, res) {
@@ -50,6 +64,7 @@ export default async function handler(req, res) {
         const data = await r.json();
         for (const j of (data.jobs || [])) {
           if (!isDesign(j.title)) continue;
+          if (!isRemote(j.location?.name || "", j.content || "")) continue;
           results.push({
             id: `gh-${j.id}`,
             title: j.title,

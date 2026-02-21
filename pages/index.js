@@ -8,7 +8,6 @@ const DESIGN_KW = [
   "creative director", "design lead", "design manager", "ux researcher",
   "user researcher", "staff designer", "principal designer",
 ];
-
 const LOCATION_BLOCK = [
   "latam", "latin america", "argentina", "brazil", "mexico",
   "india", "philippines", "indonesia", "china", "singapore",
@@ -18,12 +17,9 @@ const LOCATION_BLOCK = [
 function isDesign(title = "") {
   return DESIGN_KW.some(k => title.toLowerCase().includes(k));
 }
-
 function isLocationOk(loc = "") {
-  const l = loc.toLowerCase();
-  return !LOCATION_BLOCK.some(b => l.includes(b));
+  return !LOCATION_BLOCK.some(b => loc.toLowerCase().includes(b));
 }
-
 function timeAgo(dateStr) {
   if (!dateStr) return "";
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
@@ -38,9 +34,21 @@ const SRC_COLORS = {
   "Greenhouse": "#C8FF3E",
   "Lever":      "#3ECFFF",
   "Jobicy":     "#FF9F3E",
-  "HN Hiring":  "#FF6B6B",
+  "Arc.dev":    "#ff6b9d",
 };
 
+async function fetchGreenhouse() {
+  const r = await fetch("/api/greenhouse");
+  const data = await r.json();
+  return (data.jobs || []).map(j => ({ ...j, type: "Remote", desc: "", source: "Greenhouse", salary: "" }));
+}
+async function fetchLever() {
+  const r = await fetch("/api/lever");
+  const data = await r.json();
+  return (data.jobs || [])
+    .filter(j => isLocationOk(j.location || ""))
+    .map(j => ({ ...j, type: "Full-time", desc: "", source: "Lever", salary: "" }));
+}
 async function fetchJobicy() {
   const r = await fetch("/api/jobicy");
   const data = await r.json();
@@ -53,35 +61,16 @@ async function fetchJobicy() {
       url: j.url,
       date: j.pubDate || new Date().toISOString(),
       location: j.jobGeo || "Remote",
-      salary: j.annualSalaryMin && j.annualSalaryMax
-        ? `$${Math.round(j.annualSalaryMin/1000)}k–$${Math.round(j.annualSalaryMax/1000)}k`
-        : "",
-      type: j.jobType || "Remote",
+      salary: j.annualSalaryMin ? `$${Math.round(j.annualSalaryMin/1000)}k–$${Math.round(j.annualSalaryMax/1000)}k` : "",
+      type: "Remote",
       desc: (j.jobExcerpt || "").replace(/<[^>]+>/g, "").slice(0, 600),
       source: "Jobicy",
     }));
 }
-
-async function fetchGreenhouse() {
-  const r = await fetch("/api/greenhouse");
+async function fetchArc() {
+  const r = await fetch("/api/arc");
   const data = await r.json();
-  return (data.jobs || [])
-    .filter(j => isLocationOk(j.location || ""))
-    .map(j => ({ ...j, type: "Full-time", desc: "", source: "Greenhouse", salary: "" }));
-}
-
-async function fetchLever() {
-  const r = await fetch("/api/lever");
-  const data = await r.json();
-  return (data.jobs || [])
-    .filter(j => isLocationOk(j.location || ""))
-    .map(j => ({ ...j, type: "Full-time", desc: "", source: "Lever", salary: "" }));
-}
-
-async function fetchHN() {
-  const r = await fetch("/api/hn");
-  const data = await r.json();
-  return (data.jobs || []).map(j => ({ ...j, type: "Remote", desc: "", salary: "" }));
+  return (data.jobs || []).map(j => ({ ...j, type: "Remote", desc: "", source: "Arc.dev", salary: "" }));
 }
 
 function Badge({ source }) {
@@ -132,7 +121,6 @@ function JobCard({ job }) {
           {open ? "↑" : "↗"}
         </span>
       </div>
-
       {open && (
         <div style={{ marginTop: 14, borderTop: "1px solid #181818", paddingTop: 14 }}>
           {job.desc && (
@@ -169,7 +157,7 @@ export default function Home() {
   const load = useCallback(async () => {
     setLoading(true);
     setJobs([]);
-    setStatuses({ Greenhouse: "loading…", Lever: "loading…", Jobicy: "loading…", "HN Hiring": "loading…" });
+    setStatuses({ Greenhouse: "loading…", Lever: "loading…", Jobicy: "loading…", "Arc.dev": "loading…" });
 
     const all = []; const seen = new Set();
     const add = (newJobs, name) => {
@@ -186,7 +174,7 @@ export default function Home() {
       fetchGreenhouse().then(j => add(j, "Greenhouse")).catch(() => setSt("Greenhouse", "failed")),
       fetchLever().then(j => add(j, "Lever")).catch(() => setSt("Lever", "failed")),
       fetchJobicy().then(j => add(j, "Jobicy")).catch(() => setSt("Jobicy", "failed")),
-      fetchHN().then(j => add(j, "HN Hiring")).catch(() => setSt("HN Hiring", "failed")),
+      fetchArc().then(j => add(j, "Arc.dev")).catch(() => setSt("Arc.dev", "failed")),
     ]);
 
     setUpdated(new Date());
@@ -199,8 +187,6 @@ export default function Home() {
     const t = `${j.title} ${j.company}`.toLowerCase();
     return (!search || t.includes(search.toLowerCase())) && (src === "all" || j.source === src);
   });
-
-  const sources = ["all", "Greenhouse", "Lever", "Jobicy", "HN Hiring"];
 
   return (
     <>
@@ -229,7 +215,7 @@ export default function Home() {
                 UX Jobs<span style={{ color: "#C8FF3E" }}>.</span>
               </h1>
               <p style={{ fontSize: 10, color: "#252525", letterSpacing: "0.05em" }}>
-                REMOTE · EUROPE & USA · DIRECT APPLY · NO ACCOUNTS · {updated ? `UPDATED ${timeAgo(updated).toUpperCase()}` : "LOADING..."}
+                REMOTE ONLY · EUROPE & USA · DIRECT APPLY · {updated ? `UPDATED ${timeAgo(updated).toUpperCase()}` : "LOADING..."}
               </p>
             </div>
             <button onClick={load} disabled={loading} style={{
@@ -264,7 +250,7 @@ export default function Home() {
                 fontFamily: "'Space Grotesk', sans-serif",
               }}
             />
-            {sources.map(s => (
+            {["all", "Greenhouse", "Lever", "Jobicy", "Arc.dev"].map(s => (
               <button key={s} onClick={() => setSrc(s)} style={{
                 background: src === s ? "#C8FF3E" : "#0d0d0d",
                 color: src === s ? "#000" : "#3a3a3a",
@@ -285,7 +271,7 @@ export default function Home() {
         {loading && jobs.length === 0 && (
           <div style={{ textAlign: "center", padding: "80px 0" }}>
             <div style={{ width: 26, height: 26, border: "2px solid #1a1a1a", borderTopColor: "#C8FF3E", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 16px" }} />
-            <p style={{ fontSize: 11, color: "#222", letterSpacing: "0.1em" }}>SCANNING COMPANY CAREER PAGES...</p>
+            <p style={{ fontSize: 11, color: "#222", letterSpacing: "0.1em" }}>SCANNING CAREER PAGES...</p>
           </div>
         )}
         {!loading && displayed.length === 0 && jobs.length > 0 && (
@@ -302,7 +288,7 @@ export default function Home() {
         </div>
         {displayed.length > 0 && (
           <p style={{ textAlign: "center", marginTop: 48, fontSize: 10, color: "#151515", letterSpacing: "0.06em" }}>
-            GREENHOUSE · LEVER · JOBICY · HN HIRING · NO ACCOUNTS NEEDED · $0/MONTH
+            GREENHOUSE · LEVER · JOBICY · ARC.DEV · REMOTE ONLY · $0/MONTH
           </p>
         )}
       </div>
