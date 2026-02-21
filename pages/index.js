@@ -1,89 +1,76 @@
 import { useState, useEffect, useCallback } from "react";
 import Head from "next/head";
 
-// Strict design-only keywords — must match title directly
-const DESIGN_TITLE_KW = ["ux", "ui designer", "product designer", "interaction designer", "visual designer", "design systems", "user experience", "user interface", "interface design", "figma"];
-const LOCATION_OK = ["remote", "europe", "usa", "united states", "uk", "germany", "france", "netherlands", "italy", "spain", "poland", "worldwide", "global", "anywhere", "emea", "international", "usa/ca", "us/ca"];
+const DESIGN_KW = [
+  "ux", "ui designer", "ui/ux", "product designer", "product design",
+  "interaction designer", "visual designer", "design system", "web designer",
+  "figma", "framer", "motion designer", "graphic designer", "brand designer",
+  "creative designer", "ux researcher", "user researcher", "design lead",
+  "design manager", "senior designer", "staff designer", "principal designer",
+];
+
+const LOCATION_BLOCK = ["latam", "latin america", "argentina", "brazil", "mexico", "india", "philippines", "indonesia", "china", "singapore", "taiwan", "hong kong", "japan", "korea", "australia", "new zealand"];
+
+function isDesign(title = "") {
+  return DESIGN_KW.some(k => title.toLowerCase().includes(k));
+}
+
+function isLocationOk(loc = "") {
+  const l = loc.toLowerCase();
+  if (LOCATION_BLOCK.some(b => l.includes(b))) return false;
+  return true;
+}
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
-  if (isNaN(diff)) return "";
+  if (isNaN(diff) || diff < 0) return "recent";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function isDesignTitle(title = "") {
-  const t = title.toLowerCase();
-  return DESIGN_TITLE_KW.some(k => t.includes(k));
-}
+const SRC_COLORS = {
+  "RemoteOK": "#C8FF3E",
+  "Greenhouse": "#3ECFFF",
+  "Lever": "#FF9F3E",
+};
 
-function isLocation(loc = "") {
-  if (!loc.trim()) return true;
-  const l = loc.toLowerCase();
-  // Exclude obvious non-Europe/USA
-  const exclude = ["latam", "latin america", "asia", "india", "philippines", "indonesia", "argentina", "brazil", "mexico", "china", "singapore"];
-  if (exclude.some(e => l.includes(e))) return false;
-  return LOCATION_OK.some(k => l.includes(k));
-}
-
-const SRC_COLORS = { "WeWorkRemotely": "#C8FF3E", "Arbeitnow": "#3ECFFF", "AI Search": "#FF9F3E" };
-
-async function fetchWWR() {
-  const r = await fetch("/api/wwr");
+async function fetchRemoteOK() {
+  const r = await fetch("/api/remoteok");
   const data = await r.json();
   return (data.jobs || [])
-    .filter(j => isDesignTitle(j.title))
+    .filter(j => isDesign(j.position) && isLocationOk(j.location || ""))
     .map(j => ({
-      id: `wwr-${j.link}`,
-      title: j.title.replace(/^[^:]+:\s*/, ""), // remove "Company: " prefix WWR adds
-      company: j.company || j.title.split(":")[0] || "Unknown",
-      url: j.link,
-      date: j.pubDate ? new Date(j.pubDate).toISOString() : new Date().toISOString(),
-      location: j.region || "Remote",
-      salary: "",
-      type: "Full-time",
-      desc: j.desc || "",
-      source: "WeWorkRemotely",
-    }));
-}
-
-async function fetchArbeitnow() {
-  const r = await fetch("/api/arbeitnow");
-  const data = await r.json();
-  return (data.data || [])
-    .filter(j => isDesignTitle(j.title) && isLocation(j.location))
-    .map(j => ({
-      id: `a-${j.slug}`,
-      title: j.title,
-      company: j.company_name,
-      url: j.url,
-      date: j.created_at ? new Date(j.created_at * 1000).toISOString() : new Date().toISOString(),
-      location: j.location || "Remote",
-      salary: "",
-      type: (j.job_types || []).join(", "),
+      id: `rok-${j.id}`,
+      title: j.position,
+      company: j.company,
+      url: `https://remoteok.com/l/${j.slug}`,
+      date: j.date || new Date().toISOString(),
+      location: j.location || "Remote Worldwide",
+      salary: j.salary_min && j.salary_max ? `$${Math.round(j.salary_min/1000)}k–$${Math.round(j.salary_max/1000)}k` : "",
+      type: "Remote",
       desc: (j.description || "").replace(/<[^>]+>/g, "").slice(0, 600),
-      source: "Arbeitnow",
+      source: "RemoteOK",
+      logo: j.company_logo || "",
     }));
 }
 
-async function fetchAI() {
-  const r = await fetch("/api/ai-jobs");
+async function fetchGreenhouse() {
+  const r = await fetch("/api/greenhouse");
   const data = await r.json();
-  return (data.jobs || []).filter(j => j.title && j.company && isDesignTitle(j.title)).map((j, i) => ({
-    id: `ai-${i}-${j.company}`,
-    title: j.title,
-    company: j.company,
-    url: j.url || "#",
-    date: j.date || new Date().toISOString(),
-    location: j.location || "Remote",
-    salary: j.salary || "",
-    type: "Full-time",
-    desc: "",
-    source: "AI Search",
-  }));
+  return (data.jobs || [])
+    .filter(j => isLocationOk(j.location || ""))
+    .map(j => ({ ...j, type: "Full-time", desc: "", source: "Greenhouse", salary: "", logo: "" }));
+}
+
+async function fetchLever() {
+  const r = await fetch("/api/lever");
+  const data = await r.json();
+  return (data.jobs || [])
+    .filter(j => isLocationOk(j.location || ""))
+    .map(j => ({ ...j, type: "Full-time", desc: "", source: "Lever", salary: "", logo: "" }));
 }
 
 function Badge({ source }) {
@@ -91,9 +78,9 @@ function Badge({ source }) {
   return (
     <span style={{
       fontSize: 10, padding: "2px 7px", borderRadius: 2,
-      background: c + "18", color: c, fontWeight: 700,
+      background: c + "15", color: c, fontWeight: 700,
       letterSpacing: "0.06em", textTransform: "uppercase",
-      border: `1px solid ${c}33`, whiteSpace: "nowrap",
+      border: `1px solid ${c}30`, whiteSpace: "nowrap",
     }}>{source}</span>
   );
 }
@@ -107,7 +94,7 @@ function JobCard({ job }) {
         background: "#0f0f0f", border: "1px solid #1a1a1a", borderRadius: 3,
         padding: "16px 20px", cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
       }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "#C8FF3E44"; e.currentTarget.style.background = "#121212"; }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "#C8FF3E40"; e.currentTarget.style.background = "#121212"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = "#1a1a1a"; e.currentTarget.style.background = "#0f0f0f"; }}
     >
       <div style={{ display: "flex", gap: 12, justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -116,7 +103,7 @@ function JobCard({ job }) {
             <span style={{ fontSize: 12, color: "#C8FF3E", fontWeight: 700 }}>{job.company}</span>
             <Badge source={job.source} />
             {job.salary && (
-              <span style={{ fontSize: 11, color: "#777", background: "#181818", padding: "1px 7px", borderRadius: 2 }}>
+              <span style={{ fontSize: 11, color: "#777", background: "#181818", padding: "1px 8px", borderRadius: 2 }}>
                 {job.salary}
               </span>
             )}
@@ -127,10 +114,12 @@ function JobCard({ job }) {
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
             <span style={{ fontSize: 11, color: "#555" }}>📍 {job.location}</span>
             {job.type && <span style={{ fontSize: 11, color: "#444" }}>{job.type}</span>}
-            <span style={{ fontSize: 11, color: "#333" }}>{timeAgo(job.date)}</span>
+            <span style={{ fontSize: 11, color: "#2e2e2e" }}>{timeAgo(job.date)}</span>
           </div>
         </div>
-        <span style={{ color: "#333", fontSize: 16, userSelect: "none", flexShrink: 0 }}>{open ? "↑" : "↗"}</span>
+        <span style={{ color: "#2e2e2e", fontSize: 16, userSelect: "none", flexShrink: 0, marginTop: 2 }}>
+          {open ? "↑" : "↗"}
+        </span>
       </div>
 
       {open && (
@@ -145,7 +134,7 @@ function JobCard({ job }) {
             onClick={e => e.stopPropagation()}
             style={{
               display: "inline-block", background: "#C8FF3E", color: "#000",
-              padding: "7px 16px", fontSize: 11, fontWeight: 800,
+              padding: "8px 18px", fontSize: 11, fontWeight: 800,
               letterSpacing: "0.1em", textTransform: "uppercase",
               textDecoration: "none", borderRadius: 2,
             }}
@@ -169,23 +158,23 @@ export default function Home() {
   const load = useCallback(async () => {
     setLoading(true);
     setJobs([]);
-    setStatuses({ WeWorkRemotely: "loading…", Arbeitnow: "loading…", "AI Search": "loading…" });
+    setStatuses({ RemoteOK: "loading…", Greenhouse: "loading…", Lever: "loading…" });
 
     const all = []; const seen = new Set();
     const add = (newJobs, name) => {
       let n = 0;
       for (const j of newJobs) {
-        const key = `${j.company}${j.title}`.toLowerCase().replace(/\s/g, "");
+        const key = `${j.company}${j.title}`.toLowerCase().replace(/\W/g, "");
         if (!seen.has(key)) { seen.add(key); all.push(j); n++; }
       }
       setJobs([...all].sort((a, b) => new Date(b.date) - new Date(a.date)));
-      setSt(name, `✓ ${n} jobs`);
+      setSt(name, `✓ ${n}`);
     };
 
     await Promise.allSettled([
-      fetchWWR().then(j => add(j, "WeWorkRemotely")).catch(e => { console.error(e); setSt("WeWorkRemotely", "failed"); }),
-      fetchArbeitnow().then(j => add(j, "Arbeitnow")).catch(e => { console.error(e); setSt("Arbeitnow", "failed"); }),
-      fetchAI().then(j => add(j, "AI Search")).catch(e => { console.error(e); setSt("AI Search", "failed"); }),
+      fetchRemoteOK().then(j => add(j, "RemoteOK")).catch(() => setSt("RemoteOK", "failed")),
+      fetchGreenhouse().then(j => add(j, "Greenhouse")).catch(() => setSt("Greenhouse", "failed")),
+      fetchLever().then(j => add(j, "Lever")).catch(() => setSt("Lever", "failed")),
     ]);
 
     setUpdated(new Date());
@@ -203,98 +192,111 @@ export default function Home() {
     <>
       <Head>
         <title>UX Jobs Feed</title>
-        <meta name="description" content="Remote UX/Product Designer jobs in Europe & USA — no fees" />
+        <meta name="description" content="Remote UX/Product Designer jobs — direct from company career pages" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
       </Head>
       <style global jsx>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #080808; color: #eee; font-family: 'Space Grotesk', sans-serif; }
-        input::placeholder { color: #2a2a2a; }
+        input { outline: none; }
+        input::placeholder { color: #252525; }
         ::-webkit-scrollbar { width: 3px; }
         ::-webkit-scrollbar-thumb { background: #1e1e1e; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
       `}</style>
 
-      <div style={{ borderBottom: "1px solid #131313", padding: "28px 28px 18px", position: "sticky", top: 0, background: "#080808", zIndex: 99 }}>
+      {/* Sticky header */}
+      <div style={{ borderBottom: "1px solid #111", padding: "24px 24px 16px", position: "sticky", top: 0, background: "#080808", zIndex: 99 }}>
         <div style={{ maxWidth: 820, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
             <div>
-              <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 4 }}>
+              <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 3 }}>
                 UX Jobs<span style={{ color: "#C8FF3E" }}>.</span>
               </h1>
-              <p style={{ fontSize: 11, color: "#2e2e2e", letterSpacing: "0.04em" }}>
-                REMOTE · EUROPE & USA · {updated ? `UPDATED ${timeAgo(updated).toUpperCase()}` : "LOADING..."}
+              <p style={{ fontSize: 10, color: "#252525", letterSpacing: "0.05em" }}>
+                REMOTE · EUROPE & USA · DIRECT APPLY · {updated ? `UPDATED ${timeAgo(updated).toUpperCase()}` : "LOADING..."}
               </p>
             </div>
             <button onClick={load} disabled={loading} style={{
-              background: "transparent", border: "1px solid #1e1e1e", color: loading ? "#2a2a2a" : "#555",
-              padding: "7px 14px", cursor: loading ? "default" : "pointer", fontSize: 11,
-              letterSpacing: "0.08em", borderRadius: 2, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600,
-            }}>{loading ? "Scanning..." : "↻ Refresh"}</button>
+              background: "transparent", border: "1px solid #1a1a1a", color: loading ? "#222" : "#444",
+              padding: "6px 14px", cursor: loading ? "default" : "pointer", fontSize: 10,
+              letterSpacing: "0.08em", borderRadius: 2, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700,
+            }}>{loading ? "SCANNING..." : "↻ REFRESH"}</button>
           </div>
 
-          <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+          {/* Source status */}
+          <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
             {Object.entries(statuses).map(([name, status]) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: status === "failed" ? "#ff5555" : status?.startsWith("✓") ? SRC_COLORS[name] : "#333",
-                  boxShadow: status?.startsWith("✓") ? `0 0 6px ${SRC_COLORS[name]}88` : "none",
+                  width: 5, height: 5, borderRadius: "50%",
+                  background: status === "failed" ? "#ff4444" : status?.startsWith("✓") ? SRC_COLORS[name] : "#2a2a2a",
+                  boxShadow: status?.startsWith("✓") ? `0 0 5px ${SRC_COLORS[name]}` : "none",
                 }} />
-                <span style={{ fontSize: 11, color: status === "failed" ? "#ff5555" : "#333" }}>{name} {status}</span>
+                <span style={{ fontSize: 10, color: status === "failed" ? "#ff4444" : "#2e2e2e", letterSpacing: "0.04em" }}>
+                  {name.toUpperCase()} {status}
+                </span>
               </div>
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Filters */}
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
             <input
               value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search role or company..."
+              placeholder="Search title or company..."
               style={{
-                background: "#0d0d0d", border: "1px solid #1a1a1a", color: "#ccc",
+                background: "#0d0d0d", border: "1px solid #181818", color: "#bbb",
                 padding: "7px 12px", fontSize: 12, borderRadius: 2, width: 220,
-                fontFamily: "'Space Grotesk', sans-serif", outline: "none",
+                fontFamily: "'Space Grotesk', sans-serif",
               }}
             />
-            {["all", "WeWorkRemotely", "Arbeitnow", "AI Search"].map(s => (
+            {["all", "RemoteOK", "Greenhouse", "Lever"].map(s => (
               <button key={s} onClick={() => setSrc(s)} style={{
                 background: src === s ? "#C8FF3E" : "#0d0d0d",
-                color: src === s ? "#000" : "#444",
-                border: `1px solid ${src === s ? "#C8FF3E" : "#1a1a1a"}`,
-                padding: "6px 12px", cursor: "pointer", fontSize: 10, fontWeight: 700,
-                letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: 2,
-                fontFamily: "'Space Grotesk', sans-serif", transition: "all 0.15s",
+                color: src === s ? "#000" : "#3a3a3a",
+                border: `1px solid ${src === s ? "#C8FF3E" : "#181818"}`,
+                padding: "6px 11px", cursor: "pointer", fontSize: 10, fontWeight: 700,
+                letterSpacing: "0.07em", textTransform: "uppercase", borderRadius: 2,
+                fontFamily: "'Space Grotesk', sans-serif", transition: "all 0.1s",
               }}>{s}</button>
             ))}
-            <span style={{ fontSize: 11, color: "#2a2a2a", marginLeft: "auto" }}>
-              {!loading && `${displayed.length} positions`}
+            <span style={{ fontSize: 10, color: "#1e1e1e", marginLeft: "auto", letterSpacing: "0.04em" }}>
+              {!loading && `${displayed.length} POSITIONS`}
             </span>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "20px 28px 60px" }}>
+      {/* List */}
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "18px 24px 60px" }}>
         {loading && jobs.length === 0 && (
           <div style={{ textAlign: "center", padding: "80px 0" }}>
-            <div style={{ width: 28, height: 28, border: "2px solid #1a1a1a", borderTopColor: "#C8FF3E", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 16px" }} />
-            <p style={{ fontSize: 12, color: "#2a2a2a", letterSpacing: "0.08em" }}>SCANNING JOB BOARDS...</p>
+            <div style={{ width: 26, height: 26, border: "2px solid #1a1a1a", borderTopColor: "#C8FF3E", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 16px" }} />
+            <p style={{ fontSize: 11, color: "#222", letterSpacing: "0.1em" }}>SCANNING COMPANY CAREER PAGES...</p>
           </div>
         )}
+
         {!loading && displayed.length === 0 && jobs.length > 0 && (
-          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#333" }}>No results. Try clearing the search.</div>
+          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#2e2e2e" }}>
+            No results. Try clearing the search.
+          </div>
         )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {displayed.map((job, i) => (
-            <div key={job.id} style={{ animation: `fadein 0.2s ease ${Math.min(i * 0.025, 0.5)}s both` }}>
+            <div key={job.id} style={{ animation: `fadein 0.2s ease ${Math.min(i * 0.02, 0.4)}s both` }}>
               <JobCard job={job} />
             </div>
           ))}
         </div>
+
         {displayed.length > 0 && (
-          <p style={{ textAlign: "center", marginTop: 40, fontSize: 10, color: "#1a1a1a", letterSpacing: "0.06em" }}>
-            SOURCES: WEWORKREMOTELY · ARBEITNOW · AI SEARCH
+          <p style={{ textAlign: "center", marginTop: 48, fontSize: 10, color: "#151515", letterSpacing: "0.06em" }}>
+            DIRECT FROM: REMOTEOK · GREENHOUSE · LEVER · NO ACCOUNTS NEEDED
           </p>
         )}
       </div>
