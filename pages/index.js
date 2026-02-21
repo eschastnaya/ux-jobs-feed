@@ -1,38 +1,52 @@
 import { useState, useEffect, useCallback } from "react";
 import Head from "next/head";
 
-const DESIGN_KW = ["ux", "ui", "product designer", "figma", "design system", "interaction", "visual designer", "product design", "interface designer"];
-const LOCATION_OK = ["remote", "europe", "usa", "united states", "uk", "germany", "france", "netherlands", "italy", "spain", "poland", "worldwide", "global", "anywhere", "emea", "international"];
+// Strict design-only keywords — must match title directly
+const DESIGN_TITLE_KW = ["ux", "ui designer", "product designer", "interaction designer", "visual designer", "design systems", "user experience", "user interface", "interface design", "figma"];
+const LOCATION_OK = ["remote", "europe", "usa", "united states", "uk", "germany", "france", "netherlands", "italy", "spain", "poland", "worldwide", "global", "anywhere", "emea", "international", "usa/ca", "us/ca"];
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (isNaN(diff)) return "";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function isDesign(title = "", tags = [], cat = "") {
-  return DESIGN_KW.some(k => `${title} ${tags.join(" ")} ${cat}`.toLowerCase().includes(k));
-}
-function isLocation(loc = "") {
-  if (!loc.trim()) return true;
-  return LOCATION_OK.some(k => loc.toLowerCase().includes(k));
+function isDesignTitle(title = "") {
+  const t = title.toLowerCase();
+  return DESIGN_TITLE_KW.some(k => t.includes(k));
 }
 
-async function fetchRemotive() {
-  const r = await fetch("/api/remotive");
+function isLocation(loc = "") {
+  if (!loc.trim()) return true;
+  const l = loc.toLowerCase();
+  // Exclude obvious non-Europe/USA
+  const exclude = ["latam", "latin america", "asia", "india", "philippines", "indonesia", "argentina", "brazil", "mexico", "china", "singapore"];
+  if (exclude.some(e => l.includes(e))) return false;
+  return LOCATION_OK.some(k => l.includes(k));
+}
+
+const SRC_COLORS = { "WeWorkRemotely": "#C8FF3E", "Arbeitnow": "#3ECFFF", "AI Search": "#FF9F3E" };
+
+async function fetchWWR() {
+  const r = await fetch("/api/wwr");
   const data = await r.json();
   return (data.jobs || [])
-    .filter(j => isDesign(j.title, j.tags || [], j.category || "") && isLocation(j.candidate_required_location))
+    .filter(j => isDesignTitle(j.title))
     .map(j => ({
-      id: `r-${j.id}`, title: j.title, company: j.company_name,
-      url: j.url, date: j.publication_date,
-      location: j.candidate_required_location || "Remote",
-      salary: j.salary || "", type: j.job_type || "",
-      desc: (j.description || "").replace(/<[^>]+>/g, "").slice(0, 600),
-      source: "Remotive",
+      id: `wwr-${j.link}`,
+      title: j.title.replace(/^[^:]+:\s*/, ""), // remove "Company: " prefix WWR adds
+      company: j.company || j.title.split(":")[0] || "Unknown",
+      url: j.link,
+      date: j.pubDate ? new Date(j.pubDate).toISOString() : new Date().toISOString(),
+      location: j.region || "Remote",
+      salary: "",
+      type: "Full-time",
+      desc: j.desc || "",
+      source: "WeWorkRemotely",
     }));
 }
 
@@ -40,11 +54,15 @@ async function fetchArbeitnow() {
   const r = await fetch("/api/arbeitnow");
   const data = await r.json();
   return (data.data || [])
-    .filter(j => isDesign(j.title, j.tags || []))
+    .filter(j => isDesignTitle(j.title) && isLocation(j.location))
     .map(j => ({
-      id: `a-${j.slug}`, title: j.title, company: j.company_name,
-      url: j.url, date: j.created_at ? new Date(j.created_at * 1000).toISOString() : new Date().toISOString(),
-      location: j.location || "Remote", salary: "",
+      id: `a-${j.slug}`,
+      title: j.title,
+      company: j.company_name,
+      url: j.url,
+      date: j.created_at ? new Date(j.created_at * 1000).toISOString() : new Date().toISOString(),
+      location: j.location || "Remote",
+      salary: "",
       type: (j.job_types || []).join(", "),
       desc: (j.description || "").replace(/<[^>]+>/g, "").slice(0, 600),
       source: "Arbeitnow",
@@ -54,15 +72,19 @@ async function fetchArbeitnow() {
 async function fetchAI() {
   const r = await fetch("/api/ai-jobs");
   const data = await r.json();
-  return (data.jobs || []).filter(j => j.title && j.company).map((j, i) => ({
-    id: `ai-${i}`, title: j.title, company: j.company,
-    url: j.url || "#", date: j.date || new Date().toISOString(),
-    location: j.location || "Remote", salary: j.salary || "",
-    type: "Full-time", desc: "", source: "AI Search",
+  return (data.jobs || []).filter(j => j.title && j.company && isDesignTitle(j.title)).map((j, i) => ({
+    id: `ai-${i}-${j.company}`,
+    title: j.title,
+    company: j.company,
+    url: j.url || "#",
+    date: j.date || new Date().toISOString(),
+    location: j.location || "Remote",
+    salary: j.salary || "",
+    type: "Full-time",
+    desc: "",
+    source: "AI Search",
   }));
 }
-
-const SRC_COLORS = { Remotive: "#C8FF3E", Arbeitnow: "#3ECFFF", "AI Search": "#FF9F3E" };
 
 function Badge({ source }) {
   const c = SRC_COLORS[source] || "#888";
@@ -71,7 +93,7 @@ function Badge({ source }) {
       fontSize: 10, padding: "2px 7px", borderRadius: 2,
       background: c + "18", color: c, fontWeight: 700,
       letterSpacing: "0.06em", textTransform: "uppercase",
-      border: `1px solid ${c}33`,
+      border: `1px solid ${c}33`, whiteSpace: "nowrap",
     }}>{source}</span>
   );
 }
@@ -89,11 +111,9 @@ function JobCard({ job }) {
       onMouseLeave={e => { e.currentTarget.style.borderColor = "#1a1a1a"; e.currentTarget.style.background = "#0f0f0f"; }}
     >
       <div style={{ display: "flex", gap: 12, justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 12, color: "#C8FF3E", fontWeight: 700 }}>
-              {job.company}
-            </span>
+            <span style={{ fontSize: 12, color: "#C8FF3E", fontWeight: 700 }}>{job.company}</span>
             <Badge source={job.source} />
             {job.salary && (
               <span style={{ fontSize: 11, color: "#777", background: "#181818", padding: "1px 7px", borderRadius: 2 }}>
@@ -116,7 +136,7 @@ function JobCard({ job }) {
       {open && (
         <div style={{ marginTop: 14, borderTop: "1px solid #181818", paddingTop: 14 }}>
           {job.desc && (
-            <p style={{ fontSize: 12, color: "#666", lineHeight: 1.75, margin: "0 0 14px" }}>
+            <p style={{ fontSize: 12, color: "#666", lineHeight: 1.75, margin: "0 0 14px", fontFamily: "system-ui" }}>
               {job.desc}{job.desc.length >= 599 ? "…" : ""}
             </p>
           )}
@@ -129,9 +149,7 @@ function JobCard({ job }) {
               letterSpacing: "0.1em", textTransform: "uppercase",
               textDecoration: "none", borderRadius: 2,
             }}
-          >
-            Open position →
-          </a>
+          >Apply directly →</a>
         </div>
       )}
     </div>
@@ -151,7 +169,7 @@ export default function Home() {
   const load = useCallback(async () => {
     setLoading(true);
     setJobs([]);
-    setStatuses({ Remotive: "loading…", Arbeitnow: "loading…", "AI Search": "loading…" });
+    setStatuses({ WeWorkRemotely: "loading…", Arbeitnow: "loading…", "AI Search": "loading…" });
 
     const all = []; const seen = new Set();
     const add = (newJobs, name) => {
@@ -165,9 +183,9 @@ export default function Home() {
     };
 
     await Promise.allSettled([
-      fetchRemotive().then(j => add(j, "Remotive")).catch(() => setSt("Remotive", "failed")),
-      fetchArbeitnow().then(j => add(j, "Arbeitnow")).catch(() => setSt("Arbeitnow", "failed")),
-      fetchAI().then(j => add(j, "AI Search")).catch(() => setSt("AI Search", "failed")),
+      fetchWWR().then(j => add(j, "WeWorkRemotely")).catch(e => { console.error(e); setSt("WeWorkRemotely", "failed"); }),
+      fetchArbeitnow().then(j => add(j, "Arbeitnow")).catch(e => { console.error(e); setSt("Arbeitnow", "failed"); }),
+      fetchAI().then(j => add(j, "AI Search")).catch(e => { console.error(e); setSt("AI Search", "failed"); }),
     ]);
 
     setUpdated(new Date());
@@ -185,11 +203,10 @@ export default function Home() {
     <>
       <Head>
         <title>UX Jobs Feed</title>
-        <meta name="description" content="Remote UX/Product Designer jobs in Europe & USA" />
+        <meta name="description" content="Remote UX/Product Designer jobs in Europe & USA — no fees" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
       </Head>
-
       <style global jsx>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #080808; color: #eee; font-family: 'Space Grotesk', sans-serif; }
@@ -200,11 +217,7 @@ export default function Home() {
         @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
       `}</style>
 
-      {/* Header */}
-      <div style={{
-        borderBottom: "1px solid #131313", padding: "28px 28px 18px",
-        position: "sticky", top: 0, background: "#080808", zIndex: 99,
-      }}>
+      <div style={{ borderBottom: "1px solid #131313", padding: "28px 28px 18px", position: "sticky", top: 0, background: "#080808", zIndex: 99 }}>
         <div style={{ maxWidth: 820, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
             <div>
@@ -219,12 +232,9 @@ export default function Home() {
               background: "transparent", border: "1px solid #1e1e1e", color: loading ? "#2a2a2a" : "#555",
               padding: "7px 14px", cursor: loading ? "default" : "pointer", fontSize: 11,
               letterSpacing: "0.08em", borderRadius: 2, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600,
-            }}>
-              {loading ? "Scanning..." : "↻ Refresh"}
-            </button>
+            }}>{loading ? "Scanning..." : "↻ Refresh"}</button>
           </div>
 
-          {/* Source dots */}
           <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
             {Object.entries(statuses).map(([name, status]) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -233,14 +243,11 @@ export default function Home() {
                   background: status === "failed" ? "#ff5555" : status?.startsWith("✓") ? SRC_COLORS[name] : "#333",
                   boxShadow: status?.startsWith("✓") ? `0 0 6px ${SRC_COLORS[name]}88` : "none",
                 }} />
-                <span style={{ fontSize: 11, color: status === "failed" ? "#ff5555" : "#333" }}>
-                  {name} {status}
-                </span>
+                <span style={{ fontSize: 11, color: status === "failed" ? "#ff5555" : "#333" }}>{name} {status}</span>
               </div>
             ))}
           </div>
 
-          {/* Search + filters */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <input
               value={search} onChange={e => setSearch(e.target.value)}
@@ -251,7 +258,7 @@ export default function Home() {
                 fontFamily: "'Space Grotesk', sans-serif", outline: "none",
               }}
             />
-            {["all", "Remotive", "Arbeitnow", "AI Search"].map(s => (
+            {["all", "WeWorkRemotely", "Arbeitnow", "AI Search"].map(s => (
               <button key={s} onClick={() => setSrc(s)} style={{
                 background: src === s ? "#C8FF3E" : "#0d0d0d",
                 color: src === s ? "#000" : "#444",
@@ -268,24 +275,16 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Job list */}
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "20px 28px 60px" }}>
         {loading && jobs.length === 0 && (
           <div style={{ textAlign: "center", padding: "80px 0" }}>
-            <div style={{
-              width: 28, height: 28, border: "2px solid #1a1a1a", borderTopColor: "#C8FF3E",
-              borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 16px",
-            }} />
+            <div style={{ width: 28, height: 28, border: "2px solid #1a1a1a", borderTopColor: "#C8FF3E", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 16px" }} />
             <p style={{ fontSize: 12, color: "#2a2a2a", letterSpacing: "0.08em" }}>SCANNING JOB BOARDS...</p>
           </div>
         )}
-
         {!loading && displayed.length === 0 && jobs.length > 0 && (
-          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#333" }}>
-            No results. Try clearing the search.
-          </div>
+          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "#333" }}>No results. Try clearing the search.</div>
         )}
-
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {displayed.map((job, i) => (
             <div key={job.id} style={{ animation: `fadein 0.2s ease ${Math.min(i * 0.025, 0.5)}s both` }}>
@@ -293,10 +292,9 @@ export default function Home() {
             </div>
           ))}
         </div>
-
         {displayed.length > 0 && (
           <p style={{ textAlign: "center", marginTop: 40, fontSize: 10, color: "#1a1a1a", letterSpacing: "0.06em" }}>
-            SOURCES: REMOTIVE · ARBEITNOW · AI SEARCH
+            SOURCES: WEWORKREMOTELY · ARBEITNOW · AI SEARCH
           </p>
         )}
       </div>
